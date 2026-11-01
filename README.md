@@ -42,8 +42,8 @@ Phone: ToyaUro                          Mac mini
 
 Every tmux panel is an equal, general-purpose workbench: any panel can take a
 name such as `phone use` or `dev` and change responsibilities with context. The
-planned communication starts with tmux and SSH, then validates discovery,
-requests and replies in real work. `tmux-agent-adon` provides the status lights.
+experimental communication CLI uses tmux and SSH for discovery, requests and
+replies; it is being validated in real work. `tmux-agent-adon` provides the status lights.
 
 For example, a Mac workbench could build an app, ask a phone workbench to open
 and inspect it, then use the phone's observations to continue. **This is a
@@ -70,7 +70,7 @@ completed a request. Each milestone needs evidence of the receiver's response.
 | Component | Purpose | Status |
 | --- | --- | --- |
 | [tmux-agent-adon](packages/tmux-agent-adon/) | Panel names, agent status lights and optional agent adapters. | Imported from the independent [tmux-agent-adon repository](https://github.com/toyauro/tmux-agent-adon). |
-| Fleet communication | Discover panels and exchange requests and results through existing tmux and SSH. | Planned; not implemented or validated in this repository yet. |
+| [Fleet communication](packages/fleet/) | Discover panes and exchange messages through tmux buffers and SSH. | Experimental; agents must check their inbox. |
 | Software factory | Build and verify software using collaborating agents. | Direction for future real workflows; not yet implemented here. |
 
 The independent adon repository remains available. Its MIT license and commit
@@ -108,8 +108,8 @@ instead. The plugin can be used independently of the future fleet features.
 
 - A status light reflects a report; it does not prove task completion or that
   the reporter is still alive.
-- Panel discovery, cross-agent messaging, acknowledgments and automatic factory
-  execution are goals to validate, not features already delivered.
+- Agents must actively check their inbox; automatic wake-up, persistence and
+  automated factory execution remain future work.
 - Device scopes remain autonomous; no central controller, database or broker
   is required by this repository today.
 

@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""Small peer-to-peer tmux mailbox. No daemon or agent-specific hooks."""
+import argparse
+import datetime
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import uuid
+import unicodedata
+from pathlib import Path
+from types import SimpleNamespace
+
+PREFIX = 'fleet-msg-'
+PANE = re.compile(r'^%[0-9]+$')
+MESSAGE_ID = re.compile(r'^[0-9a-f]{32}$')
+MAX_BODY = 128 * 1024
+
+
+def fail(message):
+    raise ValueError(message)
+
+
+def pane_id(value):
+    if not value or not PANE.fullmatch(value):
+        fail('pane must be a tmux pane ID such as %2')
+    return value
+
+
+def message_id(value):
+    if not value or not MESSAGE_ID.fullmatch(value):
+        fail('invalid message ID')
+    return value
+
+
+def call(args, tmux_args, data=None, allow_failure=False):
+    cmd = ['tmux', '-L', args.server, *tmux_args]
+    if args.host:
+        # RemoteCommand and RequestTTY in a user's SSH config must not attach a UI.
+        cmd = ['ssh', '-T', '-o', 'RemoteCommand=none', '-o', 'RequestTTY=no',
+               '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '--', args.host,
+               shlex.join(cmd)]
+    try:
+        result = subprocess.run(cmd, input=data, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        fail('tmux/SSH unavailable: ' + str(exc))
+    if result.returncode and not allow_failure:
+        fail(result.stderr.strip() or 'tmux/SSH command failed')
+    return result
+
+
+def pane_exists(args, target):
+    output = call(args, ['list-panes', '-a', '-F', '#{pane_id}']).stdout.splitlines()
+    if target not in output:
+        fail('pane does not exist on the selected tmux server: ' + target)
+
+
+def parse_address(value):
+    parts = value.split('/')
+    if len(parts) != 3 or not parts[0] or not parts[1]:
+        fail('address must be HOST/SERVER/%PANE (HOST is an SSH alias reachable by the peer)')
+    pane_id(parts[2])
+    return parts
+
+
+def body_text(value):
+    text = sys.stdin.read(MAX_BODY + 1) if value == '-' else value
+    if not text.strip():
+        fail('message body is empty')
+    if len(text.encode('utf-8')) > MAX_BODY:
+        fail('message body exceeds 128 KiB')
+    return text
+
+
+def get_buffer(args, mid):
+    result = call(args, ['show-buffer', '-b', PREFIX + message_id(mid)], allow_failure=True)
+    if result.returncode:
+        fail('message not found on the selected server: ' + mid)
+    try:
+        message = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        fail('message buffer is not valid JSON')
+    if not isinstance(message, dict) or message.get('id') != mid or message.get('version') != 1:
+        fail('invalid fleet message')
+    return message
+
+
+def send(args, target, sender, body, reply_to=None, thread=None):
+    target = pane_id(target)
+    parse_address(sender)
+    pane_exists(args, target)
+    mid = uuid.uuid4().hex
+    message = {'version': 1, 'id': mid, 'thread': thread or mid,
+               'reply_to': reply_to, 'from': sender, 'to_pane': target,
+               'created': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+               'body': body}
+    encoded = json.dumps(message, ensure_ascii=False, separators=(',', ':'))
+    call(args, ['load-buffer', '-b', PREFIX + mid, '-'], data=encoded)
+    print(json.dumps({'stored': True, 'id': mid, 'thread': message['thread'],
+                      'to_pane': target, 'host': args.host or 'local',
+                      'server': args.server}, ensure_ascii=False))
+
+
+def configured_nodes():
+    config_path = Path(os.environ.get('FLEET_CONFIG', os.path.join(
+        os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')),
+        'toyauro-fleet', 'config.json')))
+    if not config_path.exists():
+        return None
+    try:
+        data = json.loads(config_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        fail('cannot read fleet config: ' + str(exc))
+    nodes = data.get('nodes') if isinstance(data, dict) else None
+    if not isinstance(nodes, list) or not nodes:
+        fail('fleet config must contain a non-empty nodes list')
+    seen = set()
+    for node in nodes:
+        if not isinstance(node, dict):
+            fail('invalid fleet node')
+        name, host, server = node.get('name'), node.get('host'), node.get('server', 'default')
+        if not isinstance(name, str) or not name.strip() or name in seen:
+            fail('each fleet node needs a unique nonempty name')
+        if host is not None and (not isinstance(host, str) or not host or host.startswith('-')):
+            fail('node host must be an SSH alias or null for local')
+        if not isinstance(server, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+', server):
+            fail('invalid tmux server name for node ' + name)
+        seen.add(name)
+    return nodes
+
+
+def list_panes(args):
+    fmt = '#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_id}\t#{pane_current_command}\t#{@pane_name}\t#{@agent_adon_state}\t#{pane_in_mode}\t#{@agent_adon_connected}'
+    lines = call(args, ['list-panes', '-a', '-F', fmt]).stdout.splitlines()
+    fields = ['session', 'window', 'pane_index', 'pane', 'command', 'name', 'state', 'in_mode', 'connected']
+    return [dict(zip(fields, line.split('\t'))) for line in lines]
+
+
+
+def display_width(value):
+    """Approximate terminal cell width without requiring third-party packages."""
+    return sum(0 if unicodedata.combining(ch) or unicodedata.category(ch) in ('Cf', 'Cc')
+               else 2 if unicodedata.east_asian_width(ch) in ('W', 'F') else 1
+               for ch in value)
+
+
+def visible_text(value):
+    # Peer-controlled names must not inject terminal control sequences.
+    return ''.join(ch if not unicodedata.category(ch).startswith('C') else ' ' for ch in str(value))
+
+
+def pad(value, width):
+    return value + ' ' * max(0, width - display_width(value))
+
+
+def wrap_cells(value, width):
+    lines, line = [], ''
+    for ch in value:
+        if line and display_width(line + ch) > width:
+            lines.append(line)
+            line = ''
+        line += ch
+    if line or not lines:
+        lines.append(line)
+    return lines
+
+
+def status_label(state, color):
+    state = visible_text(state or 'unknown')
+    glyph = '○' if state == 'unknown' else '●'
+    if color and state in {'working', 'waiting', 'error', 'idle'}:
+        code = {'working': '92', 'waiting': '93', 'error': '91', 'idle': '97'}[state]
+        glyph = f'\033[{code}m{glyph}\033[0m'
+    return glyph + ' ' + state
+
+
+def render_table(results, columns, color):
+    records = []
+    for p in results:
+        records.append([visible_text(p['device']), visible_text(p['server']),
+                        visible_text(p['name'] or '—'), visible_text(p['state'] or 'unknown'),
+                        visible_text(p['command']),
+                        visible_text(f"{p['session']}:{p['window']}.{p['pane_index']}"),
+                        visible_text(p['pane'])])
+    headers = ['DEVICE', 'SERVER', 'WORKSTATION', 'STATUS', 'PROCESS', 'SESSION:WIN.PANE', 'ID']
+    plain = [[r[0], r[1], r[2], status_label(r[3], False), *r[4:]] for r in records]
+    widths = [max(display_width(headers[i]), *(display_width(row[i]) for row in plain))
+              if plain else display_width(headers[i]) for i in range(len(headers))]
+    total_width = sum(widths) + 3 * len(widths) + 1
+    if total_width <= columns:
+        def border(left, middle, right):
+            return left + middle.join('─' * (w + 2) for w in widths) + right
+        def row(cells, status=None):
+            pieces = []
+            for i, cell in enumerate(cells):
+                if i == 3 and status is not None:
+                    pieces.append(status_label(status, color) + ' ' * (widths[i] - display_width(cell)))
+                else:
+                    pieces.append(pad(cell, widths[i]))
+            return '│ ' + ' │ '.join(pieces) + ' │'
+        print(border('╭', '┬', '╮'))
+        print(row(headers))
+        print(border('├', '┼', '┤'))
+        previous = None
+        for rec, cells in zip(records, plain):
+            key = (rec[0], rec[1])
+            if previous is not None and key != previous:
+                print(border('├', '┼', '┤'))
+            print(row(cells, rec[3]))
+            previous = key
+        print(border('╰', '┴', '╯'))
+    else:
+        # Keep a bordered, readable layout on narrow phone terminals.
+        frame_width = min(columns, 64)
+        if frame_width < 12:
+            for rec in records:
+                for line in wrap_cells(' / '.join((rec[0], rec[1], rec[2], rec[3], rec[5], rec[6], rec[4])), max(1, columns)):
+                    print(line)
+            return
+        inner = frame_width - 4
+        previous = None
+        def border(left, right):
+            return left + '─' * (frame_width - 2) + right
+        def framed(value, colored_state=None):
+            rendered = value
+            if colored_state is not None:
+                symbol = status_label(colored_state, color).split(' ', 1)[0]
+                rendered = symbol + value[1:]
+            print('│ ' + rendered + ' ' * (inner - display_width(value)) + ' │')
+        for rec in records:
+            device, server, name, state, command, location, pane = rec
+            key = (device, server)
+            if key != previous:
+                if previous is not None:
+                    print(border('╰', '╯'))
+                    print()
+                print(border('╭', '╮'))
+                for line in wrap_cells(f'{device}  /  {server}', inner):
+                    framed(line)
+                print(border('├', '┤'))
+                previous = key
+            plain_status = status_label(state, False).split(' ', 1)[0]
+            for i, line in enumerate(wrap_cells(f'{plain_status} {name}  ·  {state}', inner)):
+                framed(line, state if i == 0 else None)
+            for line in wrap_cells(f'  {location}  {pane}  ·  {command}', inner):
+                framed(line)
+        if previous is not None:
+            print(border('╰', '╯'))
+        else:
+            print('No workstations found.')
+
+def list_fleet(args, explicitly_targeted):
+    nodes = None if explicitly_targeted else configured_nodes()
+    if nodes is None:
+        nodes = [{'name': args.host or 'local', 'host': args.host, 'server': args.server}]
+    results, errors = [], []
+    for node in nodes:
+        target = SimpleNamespace(host=node.get('host'), server=node.get('server', 'default'))
+        try:
+            for pane in list_panes(target):
+                if args.all or pane['name'] or pane['connected'] == '1':
+                    results.append({'device': node['name'], 'host': target.host or 'local',
+                                    'server': target.server, **pane})
+        except ValueError as exc:
+            errors.append({'device': node['name'], 'host': target.host or 'local',
+                           'server': target.server, 'error': str(exc)})
+    if args.json:
+        print(json.dumps({'panes': results, 'errors': errors}, ensure_ascii=False, indent=2))
+    else:
+        columns = shutil.get_terminal_size(fallback=(80, 24)).columns
+        color = sys.stdout.isatty() and 'NO_COLOR' not in os.environ and os.environ.get('TERM') != 'dumb'
+        render_table(results, max(1, columns), color)
+        for error in errors:
+            print(f"{visible_text(error['device'])} / {visible_text(error['server'])}: UNAVAILABLE: {visible_text(error['error'])}", file=sys.stderr)
+    if errors:
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description='Peer tmux inboxes; a stored message is not a read receipt.')
+    parser.add_argument('--host', help='SSH alias of target device; omit for local')
+    parser.add_argument('--server', help='tmux server name (default: default)')
+    sub = parser.add_subparsers(dest='command', required=True)
+    p = sub.add_parser('list', help='discover configured fleet panes and their adon status')
+    p.add_argument('--all', action='store_true', help='include unnamed, unconnected panes')
+    p.add_argument('--json', action='store_true', help='machine-readable output')
+    p = sub.add_parser('send', help='store a message for a pane')
+    p.add_argument('--to', required=True, help='recipient pane ID')
+    p.add_argument('--from', dest='sender', required=True, help='your return address HOST/SERVER/%%PANE')
+    p.add_argument('--body', required=True, help='message text, or - to read stdin')
+    p = sub.add_parser('inbox', help='read a pane inbox without deleting messages')
+    p.add_argument('--pane', default=os.environ.get('TMUX_PANE'))
+    p = sub.add_parser('ack', help='delete one processed message from the inbox')
+    p.add_argument('--pane', default=os.environ.get('TMUX_PANE'))
+    p.add_argument('id')
+    p = sub.add_parser('reply', help='reply to a message using its return address')
+    p.add_argument('--pane', default=os.environ.get('TMUX_PANE'))
+    p.add_argument('--from', dest='sender', required=True, help='your return address HOST/SERVER/%%PANE')
+    p.add_argument('--body', required=True, help='message text, or - to read stdin')
+    p.add_argument('id')
+    args = parser.parse_args()
+    explicitly_targeted = args.host is not None or args.server is not None
+    args.server = args.server or 'default'
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+', args.server):
+        fail('invalid tmux server name')
+    if args.command == 'list':
+        list_fleet(args, explicitly_targeted)
+    elif args.command == 'send':
+        send(args, args.to, args.sender, body_text(args.body))
+    elif args.command == 'inbox':
+        target = pane_id(args.pane)
+        pane_exists(args, target)
+        names = call(args, ['list-buffers', '-F', '#{buffer_name}']).stdout.splitlines()
+        messages = []
+        for name in names:
+            if name.startswith(PREFIX) and MESSAGE_ID.fullmatch(name[len(PREFIX):]):
+                try:
+                    msg = get_buffer(args, name[len(PREFIX):])
+                except ValueError:
+                    continue  # A concurrent acknowledgement may remove it.
+                if msg.get('to_pane') == target:
+                    messages.append(msg)
+        messages.sort(key=lambda m: (m.get('created', ''), m.get('id', '')))
+        print(json.dumps(messages, ensure_ascii=False, indent=2))
+    elif args.command in ('ack', 'reply'):
+        target = pane_id(args.pane)
+        pane_exists(args, target)
+        msg = get_buffer(args, args.id)
+        if msg.get('to_pane') != target:
+            fail('message belongs to another pane')
+        if args.command == 'ack':
+            call(args, ['delete-buffer', '-b', PREFIX + args.id])
+            print(json.dumps({'acknowledged': args.id}))
+        else:
+            host, server, destination = parse_address(msg.get('from', ''))
+            parse_address(args.sender)
+            body = body_text(args.body)
+            args.host, args.server = (None if host == '.' else host), server
+            send(args, destination, args.sender, body, reply_to=msg['id'], thread=msg['thread'])
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, BrokenPipeError) as exc:
+        print('fleet: ' + str(exc), file=sys.stderr)
+        sys.exit(1)

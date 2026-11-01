@@ -29,7 +29,7 @@ ToyaUro Fleet 是一个面向黑灯软件工厂的 monorepo：让多个独立 Ag
 └──────────────────────────┘              └──────────────────────────┘
 ```
 
-每个 tmux panel 都是平等的通用工位：任何 panel 都可以按任务命名为 `phone use`、`dev` 或其他名称，也可以随上下文改变职责。计划中的通信先复用 tmux 与 SSH，逐步验证 Agent 如何发现彼此、发送请求和返回结果；适配不同 harness 的状态灯由 `tmux-agent-adon` 提供。
+每个 tmux panel 都是平等的通用工位：任何 panel 都可以按任务命名为 `phone use`、`dev` 或其他名称，也可以随上下文改变职责。通信原型复用 tmux 与 SSH，让 Agent 按工位读取消息、发送请求和返回结果；适配不同 harness 的状态灯由 `tmux-agent-adon` 提供。
 
 例如，一个 Mac 工位构建 App 后，请手机工位在真机上打开并检查；手机工位返回观察到的结果，Mac 工位继续修改。**这个跨设备示例是目标，尚未作为本仓库的 fleet 通信功能完成端到端验收。**
 
@@ -48,7 +48,7 @@ ToyaUro Fleet 是一个面向黑灯软件工厂的 monorepo：让多个独立 Ag
 | 组件 | 用途 | 当前状态 |
 | --- | --- | --- |
 | [tmux-agent-adon](packages/tmux-agent-adon/) | panel 名称、Agent 状态灯和可选适配器。 | 已从[独立 adon 仓库](https://github.com/toyauro/tmux-agent-adon)导入。 |
-| Fleet 通信 | 发现 panel，复用 tmux 和 SSH 交换请求与结果。 | 规划中；本仓库尚未实现或验收。 |
+| [Fleet 通信](packages/fleet/) | 发现 pane，复用 tmux 命名 buffer 和 SSH 交换请求与回复。 | 实验原型；Agent 需主动查看收件箱，跨设备 Agent 实际验收见组件文档。 |
 | 软件工厂 | 让协作的 Agent 构建和验证软件。 | 未来以真实任务驱动，尚未在本仓库实现。 |
 
 独立 adon 仓库继续保留；其 MIT 许可证和提交历史保留在 `packages/tmux-agent-adon` 子树中。克隆本仓库即可获得组件源码，不需要初始化 Git submodule。
@@ -80,7 +80,7 @@ tmux set-option -w pane-border-format '#{E:@agent_adon_label_format}'
 ## 当前边界
 
 - 状态灯反映报告，不证明任务完成，也不保证报告方仍然存活。
-- panel 发现、跨 Agent 消息、接收确认和自动化工厂执行仍待实现和验证。
+- 通信原型要求 Agent 主动查看收件箱；自动唤醒、持久化和软件工厂执行尚未实现。
 - 各设备保持自主；本仓库目前不要求中心控制器、数据库或消息代理。
 
 ## 许可证
