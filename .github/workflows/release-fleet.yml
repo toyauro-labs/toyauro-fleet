@@ -39,3 +39,5 @@ jobs:
           # Write access to toyauro-labs/homebrew-tap only. Unavailable, and unused, on
           # pull requests, but the config still has to expand it.
           TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY || 'unused-in-snapshot' }}
+      # GoReleaser writes the cask without parsing it.
+      - run: cat dist/homebrew/Casks/fleet.rb && ruby -c dist/homebrew/Casks/fleet.rb

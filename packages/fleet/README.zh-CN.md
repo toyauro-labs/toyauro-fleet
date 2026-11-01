@@ -15,8 +15,8 @@
 brew install toyauro-labs/tap/fleet
 
 # 手机（Termux）
-curl -fLO https://github.com/toyauro-labs/toyauro-fleet/releases/latest/download/fleet-android-arm64.deb
-pkg install ./fleet-android-arm64.deb
+curl -fLO https://github.com/toyauro-labs/toyauro-fleet/releases/latest/download/fleet-android-arm64.termux.deb
+pkg install ./fleet-android-arm64.termux.deb
 
 # Debian / Ubuntu；Fedora 用同目录下的 fleet-linux-amd64.rpm
 curl -fLO https://github.com/toyauro-labs/toyauro-fleet/releases/latest/download/fleet-linux-amd64.deb
