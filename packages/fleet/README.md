@@ -15,8 +15,8 @@ Requirements: tmux and, for remote peers, noninteractive SSH in both directions.
 brew install toyauro-labs/tap/fleet
 
 # Phone (Termux)
-curl -fLO https://github.com/toyauro-labs/toyauro-fleet/releases/latest/download/fleet-android-arm64.deb
-pkg install ./fleet-android-arm64.deb
+curl -fLO https://github.com/toyauro-labs/toyauro-fleet/releases/latest/download/fleet-android-arm64.termux.deb
+pkg install ./fleet-android-arm64.termux.deb
 
 # Debian / Ubuntu; Fedora uses fleet-linux-amd64.rpm from the same place
 curl -fLO https://github.com/toyauro-labs/toyauro-fleet/releases/latest/download/fleet-linux-amd64.deb
