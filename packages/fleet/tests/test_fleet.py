@@ -7,7 +7,22 @@ import unicodedata
 import uuid
 from pathlib import Path
 
-CLI = str(Path(__file__).resolve().parents[1] / 'bin' / 'fleet')
+# These tests pin what agents depend on: flags, exit codes and JSON. They run the
+# binary, from $FLEET_BIN where there is no toolchain, otherwise a fresh build.
+PACKAGE = Path(__file__).resolve().parents[1]
+CLI = os.environ.get('FLEET_BIN')
+_build_dir = None
+
+def setUpModule():
+    global CLI, _build_dir
+    if not CLI:
+        _build_dir = tempfile.TemporaryDirectory()
+        CLI = str(Path(_build_dir.name) / 'fleet')
+        subprocess.run(['go', 'build', '-o', CLI, '.'], cwd=PACKAGE, check=True)
+
+def tearDownModule():
+    if _build_dir:
+        _build_dir.cleanup()
 
 class FleetTest(unittest.TestCase):
     def setUp(self):
@@ -97,5 +112,20 @@ class FleetTest(unittest.TestCase):
     def test_stale_pane_rejected(self):
         self.run_cli('send', '--to', '%999999', '--from', f'./{self.server}/{self.a}', '--body', 'hi', ok=False)
         self.run_cli('inbox', '--pane', '%999999', ok=False)
+
+    def test_body_from_stdin_and_errors_go_to_stderr(self):
+        p = subprocess.run([CLI, '--server', self.server, 'send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', '-'],
+                           input='多行\n消息\n', text=True, capture_output=True, timeout=10)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(self.run_cli('inbox', '--pane', self.b).stdout)[0]['body'], '多行\n消息\n')
+        empty = self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', '   ', ok=False)
+        self.assertEqual(empty.stdout, '')
+        self.assertEqual(empty.stderr.strip(), 'fleet: message body is empty')
+
+    def test_without_a_terminal_bare_fleet_prints_help_rather_than_a_ui(self):
+        p = subprocess.run([CLI], text=True, capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('Usage:', p.stdout)
+        self.assertNotIn('\x1b', p.stdout)
 
 if __name__ == '__main__': unittest.main()
