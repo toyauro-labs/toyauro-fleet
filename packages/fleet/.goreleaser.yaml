@@ -1,0 +1,92 @@
+# Builds every install path from one tag. Try it without publishing:
+#   goreleaser release --snapshot --clean
+version: 2
+project_name: fleet
+
+builds:
+  - id: fleet
+    binary: fleet
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/toyauro-labs/toyauro-fleet/packages/fleet/cmd.version={{ .Version }}
+  # Kept apart so only this build goes into the Termux package.
+  - id: fleet-android
+    binary: fleet
+    env: [CGO_ENABLED=0]
+    goos: [android]
+    goarch: [arm64]
+    ldflags:
+      - -s -w -X github.com/toyauro-labs/toyauro-fleet/packages/fleet/cmd.version={{ .Version }}
+
+# Names carry no version so /releases/latest/download/ URLs keep working.
+archives:
+  - id: fleet
+    formats: [tar.gz]
+    name_template: fleet-{{ .Os }}-{{ .Arch }}
+
+nfpms:
+  - id: linux
+    ids: [fleet]
+    package_name: fleet
+    file_name_template: fleet-{{ .Os }}-{{ .Arch }}
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    dependencies: [tmux, openssh-client]
+    overrides:
+      rpm:
+        dependencies: [tmux, openssh-clients]
+    vendor: ToyaUro
+    homepage: https://github.com/toyauro-labs/toyauro-fleet
+    maintainer: ToyaUro <noreply@github.com>
+    description: Live view and peer inboxes for agents in tmux panes across devices.
+    license: MIT
+  - id: termux
+    ids: [fleet-android]
+    package_name: fleet
+    file_name_template: fleet-android-{{ .Arch }}
+    formats: [termux.deb]
+    bindir: /data/data/com.termux/files/usr/bin
+    dependencies: [tmux, openssh]
+    vendor: ToyaUro
+    homepage: https://github.com/toyauro-labs/toyauro-fleet
+    maintainer: ToyaUro <noreply@github.com>
+    description: Live view and peer inboxes for agents in tmux panes across devices.
+    license: MIT
+
+checksum:
+  name_template: checksums.txt
+
+homebrew_casks:
+  - name: fleet
+    ids: [fleet]
+    binaries: [fleet]
+    homepage: https://github.com/toyauro-labs/toyauro-fleet
+    description: Live view and peer inboxes for agents in tmux panes across devices
+    dependencies:
+      - formula: tmux
+    repository:
+      owner: toyauro-labs
+      name: homebrew-tap
+      git:
+        url: git@github.com:toyauro-labs/homebrew-tap.git
+        private_key: "{{ .Env.TAP_DEPLOY_KEY }}"
+    # Release binaries are not notarized; Gatekeeper would refuse them.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/fleet"]
+          end
+
+changelog:
+  sort: asc
+  filters:
+    include:
+      - "\\(fleet\\)"
+
+release:
+  github:
+    owner: toyauro-labs
+    name: toyauro-fleet
