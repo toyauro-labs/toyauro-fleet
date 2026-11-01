@@ -1,0 +1,41 @@
+name: Release fleet
+
+on:
+  push:
+    tags: ["v*"]
+  # Builds every package without publishing, so a broken config shows up before
+  # a tag does.
+  pull_request:
+    paths:
+      - packages/fleet/**
+      - .github/workflows/release-fleet.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fleet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/fleet/go.mod
+          cache-dependency-path: packages/fleet/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y tmux
+      - run: make test
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          workdir: packages/fleet
+          args: release --clean ${{ github.event_name == 'pull_request' && '--snapshot' || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Write access to toyauro-labs/homebrew-tap only. Unavailable, and unused, on
+          # pull requests, but the config still has to expand it.
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY || 'unused-in-snapshot' }}
