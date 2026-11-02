@@ -101,7 +101,7 @@ fleet --server vibe inbox --pane %127
 
 `reply` 带原消息 ID 和线程 ID，发送回复后不会自动删除原消息；`ack` 是收件方明确删除已处理的消息。`--body -` 可从标准输入读取多行文字。
 
-**现在的边界：** `stored: true` 只表示消息写入了对方 tmux，不表示 Agent 已读或完成。Agent 需要主动运行 `inbox`；当前不会自动唤醒 Agent 或注入输入框。tmux server 退出后消息会消失。pane、SSH 或 server 不可用时会报错；网络异常后的重复发送会产生新 ID。SSH 凭据及 tmux server 的访问权限决定谁能读写消息。需要持久化、去重和自动通知时，再根据实际需求补充。
+**现在的边界：** `stored: true` 只表示消息写入了对方 tmux，不表示 Agent 已读或完成。Agent 需要主动运行 `inbox`；当前不会自动唤醒 Agent 或注入输入框。tmux server 退出后消息会消失。pane、SSH 或 server 不可用时会报错；发送或回复在连上对方后失败时，消息可能已经存入；这时错误信息会给出消息 ID，用 `--id 该ID` 重试会覆盖原消息，而不是再存一份。这只在对方 ack 之前成立：ack 之后再重试会重新存入，看到过两次的收件方也可能处理两次。SSH 凭据及 tmux server 的访问权限决定谁能读写消息。需要持久化、去重和自动通知时，再根据实际需求补充。
 
 在本目录执行 `make build` 构建，`make dist` 交叉编译；`make test` 运行测试，测试使用隔离的 tmux server。`tests/test_fleet.py` 固定了 Agent 依赖的命令行约定；没有 Go 的设备可设置 `FLEET_BIN`，让它测试已构建的二进制。
 

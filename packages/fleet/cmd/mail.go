@@ -29,8 +29,12 @@ func addressFlags(cmd *cobra.Command, from, body *string) {
 	_ = cmd.MarkFlagRequired("body")
 }
 
+func idFlag(cmd *cobra.Command, id *string) {
+	cmd.Flags().StringVar(id, "id", "", "message ID to reuse when retrying a send whose result is unknown")
+}
+
 func init() {
-	var to, from, body string
+	var to, from, body, sendID string
 	send := &cobra.Command{
 		Use:   "send",
 		Short: "Store a message for a pane",
@@ -40,7 +44,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			receipt, err := fleet.Send(target(), to, from, text)
+			receipt, err := fleet.Send(target(), to, from, text, sendID)
 			if err != nil {
 				return err
 			}
@@ -50,6 +54,7 @@ func init() {
 	send.Flags().StringVar(&to, "to", "", "recipient pane ID")
 	_ = send.MarkFlagRequired("to")
 	addressFlags(send, &from, &body)
+	idFlag(send, &sendID)
 
 	var inboxPane string
 	inbox := &cobra.Command{
@@ -80,7 +85,7 @@ func init() {
 	}
 	paneFlag(ack, &ackPane)
 
-	var replyPane, replyFrom, replyBody string
+	var replyPane, replyFrom, replyBody, replyID string
 	reply := &cobra.Command{
 		Use:   "reply ID",
 		Short: "Reply to a message using its return address",
@@ -90,7 +95,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			receipt, err := fleet.Reply(target(), replyPane, args[0], replyFrom, text)
+			receipt, err := fleet.Reply(target(), replyPane, args[0], replyFrom, text, replyID)
 			if err != nil {
 				return err
 			}
@@ -99,6 +104,7 @@ func init() {
 	}
 	paneFlag(reply, &replyPane)
 	addressFlags(reply, &replyFrom, &replyBody)
+	idFlag(reply, &replyID)
 
 	rootCmd.AddCommand(send, inbox, ack, reply)
 }

@@ -13,11 +13,11 @@ func (realBackend) Load(n fleet.Node) ([]fleet.Pane, []fleet.Message, error) {
 }
 
 func (realBackend) Send(t fleet.Target, to, from, body string) (fleet.Receipt, error) {
-	return fleet.Send(t, to, from, body)
+	return fleet.Send(t, to, from, body, "")
 }
 
 func (realBackend) Reply(t fleet.Target, pane, id, from, body string) (fleet.Receipt, error) {
-	return fleet.Reply(t, pane, id, from, body)
+	return fleet.Reply(t, pane, id, from, body, "")
 }
 
 func (realBackend) Ack(t fleet.Target, pane, id string) error { return fleet.Ack(t, pane, id) }

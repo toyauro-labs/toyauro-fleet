@@ -110,6 +110,19 @@ class FleetTest(unittest.TestCase):
         self.assertIn(self.a, narrow)
         self.assertTrue(all(width(line) <= 40 for line in narrow.splitlines()))
 
+    def test_retry_with_the_same_id_overwrites_rather_than_duplicates(self):
+        sent = json.loads(self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'first').stdout)
+        again = json.loads(self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'retry', '--id', sent['id']).stdout)
+        self.assertEqual(again['id'], sent['id'])
+        inbox = json.loads(self.run_cli('inbox', '--pane', self.b).stdout)
+        self.assertEqual([(m['id'], m['body']) for m in inbox], [(sent['id'], 'retry')])
+        reply_id = uuid.uuid4().hex
+        for _ in range(2):
+            self.run_cli('reply', '--pane', self.b, '--from', f'./{self.server}/{self.b}', '--body', 'ok', '--id', reply_id, sent['id'])
+        self.assertEqual([m['id'] for m in json.loads(self.run_cli('inbox', '--pane', self.a).stdout)], [reply_id])
+        bad = self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'x', '--id', 'not-an-id', ok=False)
+        self.assertEqual(bad.stderr.strip(), 'fleet: --id must be 32 lowercase hex characters')
+
     def test_stale_pane_rejected(self):
         self.run_cli('send', '--to', '%999999', '--from', f'./{self.server}/{self.a}', '--body', 'hi', ok=False)
         self.run_cli('inbox', '--pane', '%999999', ok=False)
