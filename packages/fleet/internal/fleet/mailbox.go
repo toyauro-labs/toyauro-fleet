@@ -199,14 +199,17 @@ func (t Target) get(id string) (Message, error) {
 // Messages reads every message on the server, oldest first. It reads them in one
 // remote shell, so a full inbox costs one SSH connection rather than one each.
 func Messages(t Target) ([]Message, error) {
-	tmux := shellJoin(t.tmux())
-	script := "for b in $(" + tmux + " list-buffers -F '#{buffer_name}' | grep -E '^" + Prefix + "[0-9a-f]{32}$'); do " +
-		"printf '%s\\t' \"$b\"; " + tmux + " show-buffer -b \"$b\"; echo; done"
-	out, err := t.run([]string{"sh", "-c", script}, "")
+	out, err := t.run([]string{"sh", "-c", messagesScript(t)}, "")
 	if err != nil {
 		return nil, err
 	}
 	return parseMessages(out), nil
+}
+
+func messagesScript(t Target) string {
+	tmux := shellJoin(t.tmux())
+	return "for b in $(" + tmux + " list-buffers -F '#{buffer_name}' | grep -E '^" + Prefix + "[0-9a-f]{32}$'); do " +
+		"printf '%s\\t' \"$b\"; " + tmux + " show-buffer -b \"$b\"; echo; done"
 }
 
 // parseMessages reads "NAME<TAB>JSON" lines. Encoded messages contain no raw

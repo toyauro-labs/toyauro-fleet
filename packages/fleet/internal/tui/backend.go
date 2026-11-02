@@ -9,15 +9,7 @@ import (
 type realBackend struct{}
 
 func (realBackend) Load(n fleet.Node) ([]fleet.Pane, []fleet.Message, error) {
-	panes, err := fleet.ListPanes(n.Target())
-	if err != nil {
-		return nil, nil, err
-	}
-	messages, err := fleet.Messages(n.Target())
-	if err != nil {
-		return nil, nil, err
-	}
-	return panes, messages, nil
+	return fleet.Snapshot(n.Target())
 }
 
 func (realBackend) Send(t fleet.Target, to, from, body string) (fleet.Receipt, error) {

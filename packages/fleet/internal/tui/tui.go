@@ -339,6 +339,10 @@ func (m *model) selectedPane() (row, bool) {
 		m.flash = "press a to show the panes on " + fleet.Visible(r.pane.Device)
 		return row{}, false
 	}
+	if r.kind == rowLoading {
+		m.flash = fleet.Visible(r.pane.Device) + " is still loading"
+		return row{}, false
+	}
 	if r.kind != rowPane {
 		m.flash = fleet.Visible(r.pane.Device) + " has no panes to act on"
 		return row{}, false

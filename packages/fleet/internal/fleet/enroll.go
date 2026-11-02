@@ -86,9 +86,11 @@ if ! command -v tmux >/dev/null 2>&1; then
   for b in /opt/homebrew/bin/tmux /usr/local/bin/tmux; do [ -x "$b" ] && echo "stray=$b"; done
   exit 0
 fi
-echo "tmux=$(command -v tmux)"
+t=$(command -v tmux)
+echo "tmux=$t"
 uid=$(id -u)
-for d in "${TMUX_TMPDIR:-/tmp}" "${PREFIX:-/nonexistent}/var/run" "${PREFIX:-/nonexistent}/tmp" /tmp; do
+# Termux keeps sockets under its prefix, and SSH sessions may not set $PREFIX.
+for d in "${TMUX_TMPDIR:-/tmp}" "${t%/bin/tmux}/var/run" /tmp; do
   for s in "$d/tmux-$uid"/*; do
     [ -S "$s" ] || continue
     n=${s##*/}
@@ -133,7 +135,8 @@ func parseProbe(out string) Probe {
 				p.StrayTmux = value
 			}
 		case "server":
-			if ValidServer(value) && !slices.Contains(p.Servers, value) {
+			// Test runs can leave servers behind, and nobody works on those.
+			if ValidServer(value) && !strings.HasPrefix(value, "fleet-test-") && !slices.Contains(p.Servers, value) {
 				p.Servers = append(p.Servers, value)
 			}
 		}
