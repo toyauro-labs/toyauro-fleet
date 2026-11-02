@@ -28,7 +28,8 @@ class FleetTest(unittest.TestCase):
     def setUp(self):
         self.server = 'fleet-test-' + uuid.uuid4().hex[:12]
         subprocess.run(['tmux', '-L', self.server, '-f', '/dev/null', 'new-session', '-d', '-s', 'one', 'sleep 120'], check=True)
-        subprocess.run(['tmux', '-L', self.server, 'new-session', '-d', '-s', 'two', 'sleep 120'], check=True)
+        # Never read the user's config: it can restore real workstations and agents here.
+        subprocess.run(['tmux', '-L', self.server, '-f', '/dev/null', 'new-session', '-d', '-s', 'two', 'sleep 120'], check=True)
         panes = subprocess.check_output(['tmux', '-L', self.server, 'list-panes', '-a', '-F', '#{pane_id}'], text=True).splitlines()
         self.a, self.b = panes
 
