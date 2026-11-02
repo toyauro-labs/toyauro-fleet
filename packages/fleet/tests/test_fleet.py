@@ -123,6 +123,18 @@ class FleetTest(unittest.TestCase):
         bad = self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'x', '--id', 'not-an-id', ok=False)
         self.assertEqual(bad.stderr.strip(), 'fleet: --id must be 32 lowercase hex characters')
 
+    def test_inside_tmux_the_server_defaults_to_the_current_one(self):
+        socket = subprocess.check_output(['tmux', '-L', self.server, 'display-message', '-p', '#{socket_path}'], text=True).strip()
+        sent = json.loads(self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'hi').stdout)
+        env = dict(os.environ, TMUX=f'{socket},1,0', TMUX_PANE=self.b)
+        inbox = subprocess.run([CLI, 'inbox'], env=env, text=True, capture_output=True, timeout=10)
+        self.assertEqual(inbox.returncode, 0, inbox.stderr)
+        self.assertEqual([m['id'] for m in json.loads(inbox.stdout)], [sent['id']])
+        # With --host the server is the other device's, so it does not follow this one.
+        remote = subprocess.run([CLI, '--host', 'nosuchhost.invalid', 'inbox'], env=env, text=True, capture_output=True, timeout=30)
+        self.assertNotEqual(remote.returncode, 0)
+        self.assertNotIn(self.server, remote.stderr)
+
     def test_stale_pane_rejected(self):
         self.run_cli('send', '--to', '%999999', '--from', f'./{self.server}/{self.a}', '--body', 'hi', ok=False)
         self.run_cli('inbox', '--pane', '%999999', ok=False)
