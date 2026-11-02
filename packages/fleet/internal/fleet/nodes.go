@@ -159,6 +159,30 @@ func ListPanes(t Target) ([]Pane, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parsePanes(out), nil
+}
+
+// Snapshot reads a server's panes and messages over one connection. On a slow
+// link, such as a phone on mobile data, each SSH handshake costs seconds.
+func Snapshot(t Target) ([]Pane, []Message, error) {
+	// Random, so nothing a peer put in a pane name can pass for the boundary.
+	marker, err := newID()
+	if err != nil {
+		return nil, nil, err
+	}
+	script := shellJoin(t.tmux("list-panes", "-a", "-F", paneFormat)) + " || exit 1; echo " + marker + "; " + messagesScript(t)
+	out, err := t.run([]string{"sh", "-c", script}, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	panes, mail, found := strings.Cut(out, marker+"\n")
+	if !found {
+		return nil, nil, errors.New("incomplete answer from tmux")
+	}
+	return parsePanes(panes), parseMessages(mail), nil
+}
+
+func parsePanes(out string) []Pane {
 	panes := []Pane{}
 	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		if line == "" {
@@ -168,7 +192,7 @@ func ListPanes(t Target) ([]Pane, error) {
 		panes = append(panes, Pane{Session: f[0], Window: f[1], PaneIndex: f[2], Pane: f[3],
 			Command: f[4], Name: f[5], State: f[6], InMode: f[7], Connected: f[8]})
 	}
-	return panes, nil
+	return panes
 }
 
 // Discover queries every node at once, so one slow device delays nothing

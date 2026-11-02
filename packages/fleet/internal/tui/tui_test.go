@@ -154,6 +154,15 @@ func TestDeviceWithOnlyBareShellsStaysVisible(t *testing.T) {
 	}
 }
 
+func TestDeviceStillLoadingSaysSo(t *testing.T) {
+	m := newModel([]fleet.Node{{Name: "phone", Host: "ace-ts", Server: "default"}}, &fakeBackend{})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	press(t, m, "enter")
+	if !strings.Contains(m.flash, "still loading") {
+		t.Errorf("a slow device is not one without panes, flash=%q", m.flash)
+	}
+}
+
 func TestViewSaysWhenItCoversLessThanTheFleet(t *testing.T) {
 	m, _ := viewModel(t)
 	m.scope = "this device only"

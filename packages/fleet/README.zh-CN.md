@@ -109,7 +109,11 @@ fleet --server vibe inbox --pane %127
 
 2026-10-29：Mac 的 `vibe` server 工位与手机 `toyauro-fleet` 工位使用早期 Python 原型，通过 Tailscale / SSH 双向发起、读取并回复；手机 Pi 实际读取并确认了消息。Agent 是经人工提示后查看收件箱的，这次没有验证自动通知。另用独立 tmux server 验证了跨 window、跨 session、原消息关联和错误 pane 拒绝。
 
-2026-11-01：Go 版本在 Linux 和 tmux 3.4 上完成测试：与 Python 原型在同一 server 上双向收发，`list` 输出逐字节一致；交互界面在真实终端中针对隔离 server 操作，SSH 由一个经 shell 执行远程命令的替身代替。**尚未在 Mac 或手机上运行。** 真实 SSH 只验证过读取一台 Linux 设备的工位，以及密钥被拒绝时的提示；跨设备发送、回复和跳转还没有走过真实 SSH。macOS 和 Android 二进制目前只确认能编译。
+2026-11-01：Go 版本在 Linux 和 tmux 3.4 上完成测试：与 Python 原型在同一 server 上双向收发，`list` 输出逐字节一致；交互界面在真实终端中针对隔离 server 操作，SSH 由一个经 shell 执行远程命令的替身代替。
+
+2026-11-02：v0.1.1 用 `brew` 装到 Mac，用 Termux 包装到一台已 root 的 Android 16 手机。约定测试在两台设备上各跑两遍都通过，手机上退出码为 0，之前 Python 原型的测试进程曾在这里退出时段错误。经 Tailscale 走真实 SSH，在隔离的 tmux server 上验证了：Mac 和手机互相发送、读取、回复和确认；带中文、换行和 shell 元字符的消息原样到达，没有执行任何内容；界面能在两台设备上运行；`enter` 能进入两台设备上的 pane，detach 后返回。`brew` 是经 SSH 运行的，所以没有覆盖从 Finder 打开时 macOS 对未公证二进制的提示；Agent 仍然不会主动取走消息。
+
+这台手机上每次 SSH 连接约需 4.5 秒（往返延迟 574ms），所以这种链路上的设备会晚约 5 秒出现和刷新。已 root 的 Termux 会话中 `pkg` 拒绝以 root 运行，需要以 Termux 用户身份或在 Termux App 里安装。
 
 ## 下一步：通信解耦与上下文边界
 

@@ -157,6 +157,42 @@ func TestParseProbeOrdersServersAndDropsBadNames(t *testing.T) {
 	if p := parseProbe("os=Darwin\nstray=/opt/homebrew/bin/tmux\n"); p.HasTmux || p.StrayTmux == "" {
 		t.Errorf("got %+v", p)
 	}
+	if p := parseProbe("tmux=/t\nserver=vibe\nserver=fleet-test-c3ed2bb3bc78\n"); !slices.Equal(p.Servers, []string{"vibe"}) {
+		t.Errorf("a server left by a test run is not a workstation: %v", p.Servers)
+	}
+}
+
+func TestSnapshotReadsPanesAndMessagesTogether(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("no tmux")
+	}
+	dir, err := os.MkdirTemp("", "fl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	t.Setenv("TMUX_TMPDIR", dir)
+	t.Setenv("TMUX", "")
+	target := Target{Server: "snap"}
+	if out, err := exec.Command("tmux", "-L", "snap", "-f", "/dev/null", "new-session", "-d", "-s", "s", "sleep 60").CombinedOutput(); err != nil {
+		t.Fatalf("%s: %s", err, out)
+	}
+	defer exec.Command("tmux", "-L", "snap", "kill-server").Run()
+	panes, mail, err := Snapshot(target)
+	if err != nil || len(panes) != 1 || len(mail) != 0 {
+		t.Fatalf("empty inbox: %+v %+v %v", panes, mail, err)
+	}
+	pane := panes[0].Pane
+	if _, err := Send(target, pane, "./snap/"+pane, "你好\nsecond line"); err != nil {
+		t.Fatal(err)
+	}
+	panes, mail, err = Snapshot(target)
+	if err != nil || len(panes) != 1 || len(mail) != 1 || mail[0].Body != "你好\nsecond line" {
+		t.Errorf("with a message: %+v %+v %v", panes, mail, err)
+	}
+	if _, _, err := Snapshot(Target{Server: "nosuchserver"}); err == nil {
+		t.Error("a missing server must be an error, or the device looks empty rather than down")
+	}
 }
 
 func TestProbeFindsOnlyLiveServers(t *testing.T) {
