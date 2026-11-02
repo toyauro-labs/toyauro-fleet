@@ -47,7 +47,8 @@ nfpms:
     package_name: fleet
     file_name_template: fleet-android-{{ .Arch }}
     formats: [termux.deb]
-    bindir: /data/data/com.termux/files/usr/bin
+    # The termux.deb format adds the Termux prefix itself.
+    bindir: /usr/bin
     dependencies: [tmux, openssh]
     vendor: ToyaUro
     homepage: https://github.com/toyauro-labs/toyauro-fleet

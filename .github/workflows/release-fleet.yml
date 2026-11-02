@@ -41,3 +41,5 @@ jobs:
           TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY || 'unused-in-snapshot' }}
       # GoReleaser writes the cask without parsing it.
       - run: cat dist/homebrew/Casks/fleet.rb && ruby -c dist/homebrew/Casks/fleet.rb
+      # An installed binary is only found if it lands on Termux's PATH.
+      - run: dpkg-deb -c dist/fleet-android-arm64.termux.deb | grep -E ' \./data/data/com\.termux/files/usr/bin/fleet$'
