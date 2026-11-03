@@ -112,6 +112,8 @@ fleet --server vibe inbox --pane %127
 
 2026-11-02：v0.1.1 用 `brew` 装到 Mac，用 Termux 包装到一台已 root 的 Android 16 手机。约定测试在两台设备上各跑两遍都通过，手机上退出码为 0，之前 Python 原型的测试进程曾在这里退出时段错误。经 Tailscale 走真实 SSH，在隔离的 tmux server 上验证了：Mac 和手机互相发送、读取、回复和确认；带中文、换行和 shell 元字符的消息原样到达，没有执行任何内容；界面能在两台设备上运行；`enter` 能进入两台设备上的 pane，detach 后返回。`brew` 是经 SSH 运行的，所以没有覆盖从 Finder 打开时 macOS 对未公证二进制的提示；Agent 仍然不会主动取走消息。
 
+2026-11-02 至 11-03：在两台设备上用 Pi（deepseek-v4.1-flash）做了 30 组两两对照和 6 轮、72 个 Agent 的社会实验，验证了 `--id` 重试不再重复、默认 server 不再误投，并发现手写返回地址约四成不可用，促成了自动填写 `--from`。详见[实验报告](../../docs/fleet-agent-society-experiment.zh-CN.md)。
+
 这台手机上每次 SSH 连接约需 4.5 秒（往返延迟 574ms），所以这种链路上的设备会晚约 5 秒出现和刷新。已 root 的 Termux 会话中 `pkg` 拒绝以 root 运行，需要以 Termux 用户身份或在 Termux App 里安装。
 
 ## 下一步：通信解耦与上下文边界

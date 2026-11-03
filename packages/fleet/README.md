@@ -114,3 +114,7 @@ On 2026-11-01, this Go version was tested on Linux with tmux 3.4: it exchanged m
 On 2026-11-02, v0.1.1 was installed on a Mac with `brew` and on a rooted Android 16 phone from the Termux package. The contract tests passed on both, twice each, with exit code 0 on the phone, where the Python prototype's test process had segfaulted on exit. Over real SSH through Tailscale, on isolated tmux servers: Mac and phone each sent to the other, read, replied and acknowledged; a body with Chinese text, newlines and shell metacharacters arrived intact and ran nothing; the view ran on both devices; and `enter` attached to a pane on each device and returned on detach. `brew` was run over SSH, so this does not cover macOS prompting about the unnotarized binary when opened from Finder, and agents still do not pick up messages unprompted.
 
 On that phone SSH took about 4.5 seconds per connection (574 ms round trip), so a device on a link like this appears, and refreshes, about 5 seconds late. In a rooted Termux session `pkg` refuses to run as root; install as the Termux user, or from the Termux app.
+
+2026-11-02/03: 30 paired trials and six society rounds (72 Pi agents on deepseek-v4.1-flash) across the Mac and the phone confirmed that `--id` retries no longer duplicate and the server default no longer misdelivers, and found that about 40% of hand-written return addresses were unusable, which led to filling in `--from`. See the [experiment report](../../docs/fleet-agent-society-experiment.zh-CN.md) (Chinese).
+
+
