@@ -114,6 +114,6 @@ On 2026-11-02, v0.1.1 was installed on a Mac with `brew` and on a rooted Android
 
 On that phone SSH took about 4.5 seconds per connection (574 ms round trip), so a device on a link like this appears, and refreshes, about 5 seconds late. In a rooted Termux session `pkg` refuses to run as root; install as the Termux user, or from the Termux app.
 
-2026-11-02/03: 30 paired trials and six society rounds (72 Pi agents on deepseek-v4.1-flash) across the Mac and the phone confirmed that `--id` retries no longer duplicate and the server default no longer misdelivers, and found that about 40% of hand-written return addresses were unusable, which led to filling in `--from`. See the [experiment report](../../docs/fleet-agent-society-experiment.zh-CN.md) (Chinese).
+2026-11-02/03: 30 paired trials and nine society rounds (108 Pi agents on deepseek-v4.1-flash) across the Mac and the phone confirmed that `--id` retries no longer duplicate and the server default no longer misdelivers, and found that about 40% of hand-written return addresses were unusable, which led to filling in `--from` and to a reply acking what it answers. See the [experiment report](../../docs/fleet-agent-society-experiment.zh-CN.md) (Chinese).
 
 
