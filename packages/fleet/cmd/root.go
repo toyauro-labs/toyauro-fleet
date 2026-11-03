@@ -29,6 +29,20 @@ var rootCmd = &cobra.Command{
 	Long: `fleet lets agents in tmux panes find each other and exchange messages, with
 tmux named buffers as inboxes and SSH between devices. There is no daemon.
 
+A stored message notifies no one. The recipient sees it only when something in
+its pane runs "fleet inbox". To prompt that, you may type into its pane, but read
+the pane first: if its input line holds text you did not type, leave it alone.
+Never clear, edit or submit someone else's draft; wait, or ask its owner.
+Your inbox is what you still owe: ack each message, replies included, as soon as
+you have acted on it. Answer with "fleet reply ID" so the answer lands in the
+asker's thread; ask once, and send again only to add something new.
+
+Omit --from: fleet fills in your return address as the other device reaches you,
+"." on the same device and the node's return_host across devices.
+
+Inside tmux, --server defaults to the server you are in; with --host it defaults
+to "default", the server on the other device.
+
 Run without arguments in a terminal for the interactive view. Add devices to it
 with "fleet node add"; "fleet node scan" lists what is on your tailnet.
 
@@ -37,6 +51,9 @@ Nodes: $FLEET_CONFIG or ~/.config/toyauro-fleet/config.json`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if serverFlag == "" {
+			serverFlag = defaultServer(hostFlag, fleet.CurrentServer())
+		}
 		if !fleet.ValidServer(serverFlag) {
 			return errors.New("invalid tmux server name")
 		}
@@ -59,9 +76,18 @@ var uiCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&hostFlag, "host", "", "SSH alias of target device; omit for local")
-	rootCmd.PersistentFlags().StringVar(&serverFlag, "server", "default", "tmux server name")
+	rootCmd.PersistentFlags().StringVar(&serverFlag, "server", "", `tmux server name (default: the one you are in, else "default")`)
 	rootCmd.AddCommand(uiCmd)
 	rootCmd.SetVersionTemplate("fleet {{.Version}}\n")
+}
+
+// defaultServer is the server a command means when --server is omitted. Agents
+// ran "fleet inbox" in panes on other servers and read the wrong, empty inbox.
+func defaultServer(host, current string) string {
+	if host == "" && current != "" {
+		return current
+	}
+	return "default"
 }
 
 func target() fleet.Target { return fleet.Target{Host: hostFlag, Server: serverFlag} }

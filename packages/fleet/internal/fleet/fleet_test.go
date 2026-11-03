@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestQuoteSurvivesAShell(t *testing.T) {
@@ -183,7 +184,7 @@ func TestSnapshotReadsPanesAndMessagesTogether(t *testing.T) {
 		t.Fatalf("empty inbox: %+v %+v %v", panes, mail, err)
 	}
 	pane := panes[0].Pane
-	if _, err := Send(target, pane, "./snap/"+pane, "你好\nsecond line"); err != nil {
+	if _, err := Send(target, pane, "./snap/"+pane, "你好\nsecond line", ""); err != nil {
 		t.Fatal(err)
 	}
 	panes, mail, err = Snapshot(target)
@@ -265,5 +266,57 @@ func TestVisibleStripsTerminalControl(t *testing.T) {
 	}
 	if got := VisibleBody("one\r\ntwo\x1b"); got != "one\ntwo " {
 		t.Errorf("%q", got)
+	}
+}
+
+// A link that delivers the write and then hangs is the case a retry used to
+// duplicate: the buffer is stored, yet the caller sees only a timeout.
+func TestTimedOutSendNamesTheIDAndARetryDoesNotDuplicate(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("no tmux")
+	}
+	dir, err := os.MkdirTemp("", "fl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	t.Setenv("TMUX_TMPDIR", dir)
+	t.Setenv("TMUX", "")
+	// This ssh runs the remote command here, then holds the link open after a write.
+	fake := "#!/bin/sh\nwhile [ \"$1\" != -- ]; do shift; done\nsh -c \"$3\"; rc=$?\n" +
+		"case \"$3\" in *load-buffer*) exec sleep 10;; esac\nexit $rc\n"
+	if err := os.WriteFile(filepath.Join(dir, "ssh"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	saved := commandTimeout
+	commandTimeout = time.Second
+	defer func() { commandTimeout = saved }()
+
+	if out, err := exec.Command("tmux", "-L", "hang", "-f", "/dev/null", "new-session", "-d", "sleep 60").CombinedOutput(); err != nil {
+		t.Fatalf("%s: %s", err, out)
+	}
+	defer exec.Command("tmux", "-L", "hang", "kill-server").Run()
+	local := Target{Server: "hang"}
+	panes, _, err := Snapshot(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pane := panes[0].Pane
+	remote := Target{Host: "flaky", Server: "hang"}
+
+	_, err = Send(remote, pane, "./hang/"+pane, "first", "")
+	if err == nil || !strings.Contains(err.Error(), "may have been stored") {
+		t.Fatalf("want a timeout that may have stored the message, got %v", err)
+	}
+	stored, _ := Inbox(local, pane)
+	if len(stored) != 1 || !strings.Contains(err.Error(), "--id "+stored[0].ID) {
+		t.Fatalf("the error must name the stored ID: %v, inbox %+v", err, stored)
+	}
+	if _, err := Send(remote, pane, "./hang/"+pane, "retry", stored[0].ID); err == nil {
+		t.Fatal("the fake link still hangs, so the retry should time out too")
+	}
+	if got, _ := Inbox(local, pane); len(got) != 1 || got[0].ID != stored[0].ID || got[0].Body != "retry" {
+		t.Errorf("a retry with --id must overwrite, not add: %+v", got)
 	}
 }

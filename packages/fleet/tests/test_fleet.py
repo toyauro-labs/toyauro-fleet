@@ -110,6 +110,60 @@ class FleetTest(unittest.TestCase):
         self.assertIn(self.a, narrow)
         self.assertTrue(all(width(line) <= 40 for line in narrow.splitlines()))
 
+    def test_retry_with_the_same_id_overwrites_rather_than_duplicates(self):
+        sent = json.loads(self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'first').stdout)
+        again = json.loads(self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'retry', '--id', sent['id']).stdout)
+        self.assertEqual(again['id'], sent['id'])
+        inbox = json.loads(self.run_cli('inbox', '--pane', self.b).stdout)
+        self.assertEqual([(m['id'], m['body']) for m in inbox], [(sent['id'], 'retry')])
+        reply_id = uuid.uuid4().hex
+        for _ in range(2):
+            self.run_cli('reply', '--pane', self.b, '--from', f'./{self.server}/{self.b}', '--body', 'ok', '--id', reply_id, sent['id'])
+        self.assertEqual([m['id'] for m in json.loads(self.run_cli('inbox', '--pane', self.a).stdout)], [reply_id])
+        bad = self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'x', '--id', 'not-an-id', ok=False)
+        self.assertEqual(bad.stderr.strip(), 'fleet: --id must be 32 lowercase hex characters')
+
+    def test_inside_tmux_the_server_defaults_to_the_current_one(self):
+        socket = subprocess.check_output(['tmux', '-L', self.server, 'display-message', '-p', '#{socket_path}'], text=True).strip()
+        sent = json.loads(self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'hi').stdout)
+        env = dict(os.environ, TMUX=f'{socket},1,0', TMUX_PANE=self.b)
+        inbox = subprocess.run([CLI, 'inbox'], env=env, text=True, capture_output=True, timeout=10)
+        self.assertEqual(inbox.returncode, 0, inbox.stderr)
+        self.assertEqual([m['id'] for m in json.loads(inbox.stdout)], [sent['id']])
+        # With --host the server is the other device's, so it does not follow this one.
+        remote = subprocess.run([CLI, '--host', 'nosuchhost.invalid', 'inbox'], env=env, text=True, capture_output=True, timeout=30)
+        self.assertNotEqual(remote.returncode, 0)
+        self.assertNotIn(self.server, remote.stderr)
+
+    def test_inside_tmux_the_return_address_is_filled_in(self):
+        socket = subprocess.check_output(['tmux', '-L', self.server, 'display-message', '-p', '#{socket_path}'], text=True).strip()
+        as_pane = lambda pane, **extra: dict(os.environ, TMUX=f'{socket},1,0', TMUX_PANE=pane, **extra)
+        run = lambda env, *args: subprocess.run([CLI, *args], env=env, text=True, capture_output=True, timeout=10)
+        sent = run(as_pane(self.a), 'send', '--to', self.b, '--body', 'hi')
+        self.assertEqual(sent.returncode, 0, sent.stderr)
+        request = json.loads(run(as_pane(self.b), 'inbox').stdout)[0]
+        self.assertEqual(request['from'], f'./{self.server}/{self.a}')
+        replied = run(as_pane(self.b), 'reply', '--body', 'ok', request['id'])
+        self.assertEqual(replied.returncode, 0, replied.stderr)
+        answer = json.loads(run(as_pane(self.a), 'inbox').stdout)[0]
+        self.assertEqual((answer['reply_to'], answer['from']), (request['id'], f'./{self.server}/{self.b}'))
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / 'config.json'
+            # Across devices the address is the one the other device uses to reach this one.
+            config.write_text(json.dumps({'nodes': [{'name': 'here', 'server': self.server},
+                                                    {'name': 'phone', 'host': 'nosuchhost.invalid', 'return_host': 'mac'}]}))
+            remote = run(as_pane(self.a, FLEET_CONFIG=str(config)), '--host', 'nosuchhost.invalid', 'send', '--to', '%0', '--body', 'x')
+            self.assertNotIn('--from is required', remote.stderr)
+            config.write_text(json.dumps({'nodes': [{'name': 'here', 'server': self.server},
+                                                    {'name': 'phone', 'host': 'nosuchhost.invalid'}]}))
+            unknown = run(as_pane(self.a, FLEET_CONFIG=str(config)), '--host', 'nosuchhost.invalid', 'send', '--to', '%0', '--body', 'x')
+            self.assertNotEqual(unknown.returncode, 0)
+            self.assertIn('--from is required: no node for nosuchhost.invalid sets return_host', unknown.stderr)
+        outside = subprocess.run([CLI, '--server', self.server, 'send', '--to', self.b, '--body', 'x'],
+                                 env={k: v for k, v in os.environ.items() if k not in ('TMUX', 'TMUX_PANE')},
+                                 text=True, capture_output=True, timeout=10)
+        self.assertEqual(outside.stderr.strip(), 'fleet: --from is required outside tmux')
+
     def test_stale_pane_rejected(self):
         self.run_cli('send', '--to', '%999999', '--from', f'./{self.server}/{self.a}', '--body', 'hi', ok=False)
         self.run_cli('inbox', '--pane', '%999999', ok=False)

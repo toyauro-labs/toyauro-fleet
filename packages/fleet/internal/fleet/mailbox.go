@@ -132,12 +132,13 @@ func (t Target) paneExists(pane string) error {
 	return nil
 }
 
-// Send stores a new message for a pane.
-func Send(t Target, to, from, body string) (Receipt, error) {
-	return send(t, to, from, body, nil, "")
+// Send stores a new message for a pane. An empty id picks a new one; passing
+// the ID from a failed attempt makes the retry overwrite rather than duplicate.
+func Send(t Target, to, from, body, id string) (Receipt, error) {
+	return send(t, to, from, body, id, nil, "")
 }
 
-func send(t Target, to, from, body string, replyTo *string, thread string) (Receipt, error) {
+func send(t Target, to, from, body, id string, replyTo *string, thread string) (Receipt, error) {
 	if err := CheckPane(to); err != nil {
 		return Receipt{}, err
 	}
@@ -147,12 +148,19 @@ func send(t Target, to, from, body string, replyTo *string, thread string) (Rece
 	if err := CheckBody(body); err != nil {
 		return Receipt{}, err
 	}
-	if err := t.paneExists(to); err != nil {
-		return Receipt{}, err
+	if id != "" {
+		if err := checkID(id); err != nil {
+			return Receipt{}, errors.New("--id must be 32 lowercase hex characters")
+		}
 	}
-	id, err := newID()
-	if err != nil {
-		return Receipt{}, err
+	if err := t.paneExists(to); err != nil {
+		return Receipt{}, fmt.Errorf("message not stored: %w", err)
+	}
+	if id == "" {
+		var err error
+		if id, err = newID(); err != nil {
+			return Receipt{}, err
+		}
 	}
 	if thread == "" {
 		thread = id
@@ -164,8 +172,11 @@ func send(t Target, to, from, body string, replyTo *string, thread string) (Rece
 	if err != nil {
 		return Receipt{}, err
 	}
+	// A link that drops after the write leaves the buffer stored but reports a
+	// failure, so the error names the ID a retry needs. Until the recipient acks,
+	// the same ID overwrites the earlier copy instead of adding one.
 	if _, err := t.run(t.tmux("load-buffer", "-b", Prefix+id, "-"), string(data)); err != nil {
-		return Receipt{}, err
+		return Receipt{}, fmt.Errorf("message %s may have been stored: %w; retry with --id %s", id, err, id)
 	}
 	return Receipt{Stored: true, ID: id, Thread: thread, ToPane: to, Host: t.HostLabel(), Server: t.Server}, nil
 }
@@ -278,7 +289,8 @@ func Ack(t Target, pane, id string) error {
 
 // Reply answers a message at its return address, keeping its thread. The
 // original stays in the inbox until acknowledged.
-func Reply(t Target, pane, id, from, body string) (Receipt, error) {
+// replyID, like Send's id, makes a retried reply overwrite its earlier copy.
+func Reply(t Target, pane, id, from, body, replyID string) (Receipt, error) {
 	m, err := t.owned(pane, id)
 	if err != nil {
 		return Receipt{}, err
@@ -287,7 +299,7 @@ func Reply(t Target, pane, id, from, body string) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, err
 	}
-	return send(replyTarget(t, host, server), to, from, body, &m.ID, m.Thread)
+	return send(replyTarget(t, host, server), to, from, body, replyID, &m.ID, m.Thread)
 }
 
 // replyTarget resolves a return address read from t's mailbox. "." means the

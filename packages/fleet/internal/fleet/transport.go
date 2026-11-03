@@ -17,7 +17,8 @@ import (
 	"time"
 )
 
-const commandTimeout = 15 * time.Second
+// commandTimeout bounds every tmux/SSH call; tests shorten it.
+var commandTimeout = 15 * time.Second
 
 var (
 	paneRe   = regexp.MustCompile(`^%[0-9]+$`)

@@ -65,7 +65,7 @@ fleet node rm mac
 
 ## 地址与配置
 
-地址格式为 `SSH别名/tmux服务器/%pane`：SSH 别名必须是**对方机器**上能访问发送方的别名。同一台设备内发消息可以用 `.`。pane 编号只在对应的 tmux server 存活期间有效，名称和职责可以改变，不能作为唯一地址。
+地址格式为 `SSH别名/tmux服务器/%pane`：SSH 别名必须是**对方机器**上能访问发送方的别名。同一台设备内发消息可以用 `.`。在 tmux 里省略 `--from` 时，`send` 和 `reply` 会自动填写：同一台设备用 `.`，跨设备用目标节点的 `return_host`；没配 `return_host` 的跨设备发送会要求写 `--from`。五轮 Pi Agent 实验中，手写地址约四成对方无法使用（如 `local`，或写成本机自己的名字），所以请在每台设备上配置一次 `return_host`，不要让 Agent 手写。pane 编号只在对应的 tmux server 存活期间有效，名称和职责可以改变，不能作为唯一地址。
 
 `fleet node add` 把设备和 tmux server 写入 `~/.config/toyauro-fleet/config.json`，也可手动编辑；非标准 SSH 端口用 `"port"`。之后 `fleet list` 会同时查询它们。默认列出有 Adon 名称或已接入 Adon 的 pane；`fleet list --all` 查看所有 pane，`fleet list --json` 用于脚本。宽终端显示表格，窄终端按设备分组；状态灯只在交互终端着色，设置 `NO_COLOR` 可关闭颜色。不可达设备会报错，不会静默当成没有工位。列表实时读取 pane 的 `@pane_name` 和状态；显示名称不是唯一地址。配置样例：
 
@@ -85,14 +85,13 @@ fleet list
 # 只查看手机一个 server
 fleet --host ace-ts --server default list
 
-# 发给手机 %2：手机上用 macmini 这个 SSH 别名能找到 Mac
+# 从 Mac 的 %127 发给手机 %2；回复地址 macmini/vibe/%127 来自 phone 节点的 return_host
 fleet --host ace-ts --server default send --to %2 \
-  --from 'macmini/vibe/%127' --body '请检查 Android 构建。'
+  --body '请检查 Android 构建。'
 
 # 手机 Agent 在 %2 里读取和回复
 fleet inbox --pane %2
-fleet reply --pane %2 --from 'ace-ts/default/%2' \
-  --body '已检查，构建能够启动。' 消息ID
+fleet reply --pane %2 --body '已检查，构建能够启动。' 消息ID
 fleet ack --pane %2 消息ID
 
 # Mac Agent 查看自己的收件箱
@@ -101,7 +100,7 @@ fleet --server vibe inbox --pane %127
 
 `reply` 带原消息 ID 和线程 ID，发送回复后不会自动删除原消息；`ack` 是收件方明确删除已处理的消息。`--body -` 可从标准输入读取多行文字。
 
-**现在的边界：** `stored: true` 只表示消息写入了对方 tmux，不表示 Agent 已读或完成。Agent 需要主动运行 `inbox`；当前不会自动唤醒 Agent 或注入输入框。tmux server 退出后消息会消失。pane、SSH 或 server 不可用时会报错；网络异常后的重复发送会产生新 ID。SSH 凭据及 tmux server 的访问权限决定谁能读写消息。需要持久化、去重和自动通知时，再根据实际需求补充。
+**现在的边界：** `stored: true` 只表示消息写入了对方 tmux，不表示 Agent 已读或完成。Agent 需要主动运行 `inbox`；当前不会自动唤醒 Agent 或注入输入框。需要在对方 pane 里输入文字去提醒它时，先读这个 pane；输入框里有不是自己输入的草稿就不要动，不清空、不修改、不提交。在 tmux 里，`--server` 默认是命令所在的 server；带 `--host` 时默认是 `default`。tmux server 退出后消息会消失。pane、SSH 或 server 不可用时会报错；发送或回复在连上对方后失败时，消息可能已经存入；这时错误信息会给出消息 ID，用 `--id 该ID` 重试会覆盖原消息，而不是再存一份。这只在对方 ack 之前成立：ack 之后再重试会重新存入，看到过两次的收件方也可能处理两次。SSH 凭据及 tmux server 的访问权限决定谁能读写消息。需要持久化、去重和自动通知时，再根据实际需求补充。
 
 在本目录执行 `make build` 构建，`make dist` 交叉编译；`make test` 运行测试，测试使用隔离的 tmux server。`tests/test_fleet.py` 固定了 Agent 依赖的命令行约定；没有 Go 的设备可设置 `FLEET_BIN`，让它测试已构建的二进制。
 
@@ -112,6 +111,8 @@ fleet --server vibe inbox --pane %127
 2026-11-01：Go 版本在 Linux 和 tmux 3.4 上完成测试：与 Python 原型在同一 server 上双向收发，`list` 输出逐字节一致；交互界面在真实终端中针对隔离 server 操作，SSH 由一个经 shell 执行远程命令的替身代替。
 
 2026-11-02：v0.1.1 用 `brew` 装到 Mac，用 Termux 包装到一台已 root 的 Android 16 手机。约定测试在两台设备上各跑两遍都通过，手机上退出码为 0，之前 Python 原型的测试进程曾在这里退出时段错误。经 Tailscale 走真实 SSH，在隔离的 tmux server 上验证了：Mac 和手机互相发送、读取、回复和确认；带中文、换行和 shell 元字符的消息原样到达，没有执行任何内容；界面能在两台设备上运行；`enter` 能进入两台设备上的 pane，detach 后返回。`brew` 是经 SSH 运行的，所以没有覆盖从 Finder 打开时 macOS 对未公证二进制的提示；Agent 仍然不会主动取走消息。
+
+2026-11-02 至 11-03：在两台设备上用 Pi（deepseek-v4.1-flash）做了 30 组两两对照和 6 轮、72 个 Agent 的社会实验，验证了 `--id` 重试不再重复、默认 server 不再误投，并发现手写返回地址约四成不可用，促成了自动填写 `--from`。详见[实验报告](../../docs/fleet-agent-society-experiment.zh-CN.md)。
 
 这台手机上每次 SSH 连接约需 4.5 秒（往返延迟 574ms），所以这种链路上的设备会晚约 5 秒出现和刷新。已 root 的 Termux 会话中 `pkg` 拒绝以 root 运行，需要以 Termux 用户身份或在 Termux App 里安装。
 
