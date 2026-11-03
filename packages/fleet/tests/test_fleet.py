@@ -57,8 +57,10 @@ class FleetTest(unittest.TestCase):
         self.assertEqual(answer['reply_to'], result['id'])
         self.assertEqual(answer['thread'], result['thread'])
         self.assertEqual(answer['id'], reply['id'])
-        self.run_cli('ack', '--pane', self.b, result['id'])
+        # Answering is handling: the reply took the original out of the inbox.
         self.assertEqual(json.loads(self.run_cli('inbox', '--pane', self.b).stdout), [])
+        self.run_cli('ack', '--pane', self.a, reply['id'])
+        self.assertEqual(json.loads(self.run_cli('inbox', '--pane', self.a).stdout), [])
 
     def test_across_windows_in_one_session(self):
         subprocess.run(['tmux', '-L', self.server, 'new-window', '-d', '-t', 'one', 'sleep 120'], check=True)
@@ -118,7 +120,7 @@ class FleetTest(unittest.TestCase):
         self.assertEqual([(m['id'], m['body']) for m in inbox], [(sent['id'], 'retry')])
         reply_id = uuid.uuid4().hex
         for _ in range(2):
-            self.run_cli('reply', '--pane', self.b, '--from', f'./{self.server}/{self.b}', '--body', 'ok', '--id', reply_id, sent['id'])
+            self.run_cli('reply', '--pane', self.b, '--from', f'./{self.server}/{self.b}', '--body', 'ok', '--id', reply_id, '--keep', sent['id'])
         self.assertEqual([m['id'] for m in json.loads(self.run_cli('inbox', '--pane', self.a).stdout)], [reply_id])
         bad = self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'x', '--id', 'not-an-id', ok=False)
         self.assertEqual(bad.stderr.strip(), 'fleet: --id must be 32 lowercase hex characters')
@@ -163,6 +165,20 @@ class FleetTest(unittest.TestCase):
                                  env={k: v for k, v in os.environ.items() if k not in ('TMUX', 'TMUX_PANE')},
                                  text=True, capture_output=True, timeout=10)
         self.assertEqual(outside.stderr.strip(), 'fleet: --from is required outside tmux')
+
+    def test_reply_acks_the_original_unless_kept_and_inbox_names_what_is_owed(self):
+        first = json.loads(self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'one').stdout)
+        second = json.loads(self.run_cli('send', '--to', self.b, '--from', f'./{self.server}/{self.a}', '--body', 'two').stdout)
+        listed = self.run_cli('inbox', '--pane', self.b)
+        self.assertEqual(len(json.loads(listed.stdout)), 2)  # stdout stays pure JSON
+        self.assertIn('2 message(s) stay here until acked', listed.stderr)
+        self.assertIn(f'fleet ack {first["id"]}', listed.stderr)
+        self.run_cli('reply', '--pane', self.b, '--from', f'./{self.server}/{self.b}', '--body', 'kept', '--keep', first['id'])
+        self.run_cli('reply', '--pane', self.b, '--from', f'./{self.server}/{self.b}', '--body', 'done', second['id'])
+        self.assertEqual([m['id'] for m in json.loads(self.run_cli('inbox', '--pane', self.b).stdout)], [first['id']])
+        self.run_cli('ack', '--pane', self.b, first['id'])
+        empty = self.run_cli('inbox', '--pane', self.b)
+        self.assertEqual((json.loads(empty.stdout), empty.stderr), ([], ''))
 
     def test_stale_pane_rejected(self):
         self.run_cli('send', '--to', '%999999', '--from', f'./{self.server}/{self.a}', '--body', 'hi', ok=False)

@@ -70,7 +70,14 @@ func init() {
 			if err != nil {
 				return err
 			}
-			return printJSON(messages, "  ")
+			if err := printJSON(messages, "  "); err != nil {
+				return err
+			}
+			// Name what is still owed where agents look; stderr keeps stdout pure JSON.
+			if len(messages) > 0 {
+				fmt.Fprintf(os.Stderr, "fleet: %d message(s) stay here until acked; once you have acted on one, run: fleet ack %s\n", len(messages), messages[0].ID)
+			}
+			return nil
 		},
 	}
 	paneFlag(inbox, &inboxPane)
@@ -90,6 +97,7 @@ func init() {
 	paneFlag(ack, &ackPane)
 
 	var replyPane, replyFrom, replyBody, replyID string
+	var replyKeep bool
 	reply := &cobra.Command{
 		Use:   "reply ID",
 		Short: "Reply to a message using its return address",
@@ -108,12 +116,19 @@ func init() {
 			if err != nil {
 				return err
 			}
+			// Answering is handling: the original leaves the inbox unless --keep.
+			if !replyKeep {
+				if err := fleet.Ack(target(), replyPane, args[0]); err != nil {
+					return fmt.Errorf("reply %s stored, but the original stays in the inbox: %w", receipt.ID, err)
+				}
+			}
 			return printJSON(receipt, "")
 		},
 	}
 	paneFlag(reply, &replyPane)
 	addressFlags(reply, &replyFrom, &replyBody)
 	idFlag(reply, &replyID)
+	reply.Flags().BoolVar(&replyKeep, "keep", false, "leave the original in the inbox (by default a reply acks it)")
 
 	rootCmd.AddCommand(send, inbox, ack, reply)
 }

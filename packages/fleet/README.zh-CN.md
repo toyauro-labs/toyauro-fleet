@@ -92,13 +92,12 @@ fleet --host ace-ts --server default send --to %2 \
 # 手机 Agent 在 %2 里读取和回复
 fleet inbox --pane %2
 fleet reply --pane %2 --body '已检查，构建能够启动。' 消息ID
-fleet ack --pane %2 消息ID
 
 # Mac Agent 查看自己的收件箱
 fleet --server vibe inbox --pane %127
 ```
 
-`reply` 带原消息 ID 和线程 ID，发送回复后不会自动删除原消息；`ack` 是收件方明确删除已处理的消息。`--body -` 可从标准输入读取多行文字。
+`reply` 带原消息 ID 和线程 ID；回复存入后会顺带 ack 原消息，因为回复了就算处理完了，要留着原消息就加 `--keep`。没有回复、直接处理完的消息用 `ack` 删除。`inbox` 在标准输出给 JSON，有消息时在标准错误提示如何 ack。`--body -` 可从标准输入读取多行文字。
 
 **现在的边界：** `stored: true` 只表示消息写入了对方 tmux，不表示 Agent 已读或完成。Agent 需要主动运行 `inbox`；当前不会自动唤醒 Agent 或注入输入框。需要在对方 pane 里输入文字去提醒它时，先读这个 pane；输入框里有不是自己输入的草稿就不要动，不清空、不修改、不提交。在 tmux 里，`--server` 默认是命令所在的 server；带 `--host` 时默认是 `default`。tmux server 退出后消息会消失。pane、SSH 或 server 不可用时会报错；发送或回复在连上对方后失败时，消息可能已经存入；这时错误信息会给出消息 ID，用 `--id 该ID` 重试会覆盖原消息，而不是再存一份。这只在对方 ack 之前成立：ack 之后再重试会重新存入，看到过两次的收件方也可能处理两次。SSH 凭据及 tmux server 的访问权限决定谁能读写消息。需要持久化、去重和自动通知时，再根据实际需求补充。
 
@@ -112,7 +111,7 @@ fleet --server vibe inbox --pane %127
 
 2026-11-02：v0.1.1 用 `brew` 装到 Mac，用 Termux 包装到一台已 root 的 Android 16 手机。约定测试在两台设备上各跑两遍都通过，手机上退出码为 0，之前 Python 原型的测试进程曾在这里退出时段错误。经 Tailscale 走真实 SSH，在隔离的 tmux server 上验证了：Mac 和手机互相发送、读取、回复和确认；带中文、换行和 shell 元字符的消息原样到达，没有执行任何内容；界面能在两台设备上运行；`enter` 能进入两台设备上的 pane，detach 后返回。`brew` 是经 SSH 运行的，所以没有覆盖从 Finder 打开时 macOS 对未公证二进制的提示；Agent 仍然不会主动取走消息。
 
-2026-11-02 至 11-03：在两台设备上用 Pi（deepseek-v4.1-flash）做了 30 组两两对照和 6 轮、72 个 Agent 的社会实验，验证了 `--id` 重试不再重复、默认 server 不再误投，并发现手写返回地址约四成不可用，促成了自动填写 `--from`。详见[实验报告](../../docs/fleet-agent-society-experiment.zh-CN.md)。
+2026-11-02 至 11-03：在两台设备上用 Pi（deepseek-v4.1-flash）做了 30 组两两对照和 9 轮、108 个 Agent 的社会实验，验证了 `--id` 重试不再重复、默认 server 不再误投，并发现手写返回地址约四成不可用，促成了自动填写 `--from`，以及回复时自动 ack 原消息。详见[实验报告](../../docs/fleet-agent-society-experiment.zh-CN.md)。
 
 这台手机上每次 SSH 连接约需 4.5 秒（往返延迟 574ms），所以这种链路上的设备会晚约 5 秒出现和刷新。已 root 的 Termux 会话中 `pkg` 拒绝以 root 运行，需要以 Termux 用户身份或在 Termux App 里安装。
 
