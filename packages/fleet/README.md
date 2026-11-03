@@ -91,13 +91,12 @@ fleet --host ace-ts --server default send --to %2 \
 # In the phone pane: read, then reply to the message ID shown by inbox.
 fleet inbox --pane %2
 fleet reply --pane %2 --body 'Checked: build launches.' MESSAGE_ID
-fleet ack --pane %2 MESSAGE_ID
 
 # On Mac: see the reply. Use the correct local tmux server and pane.
 fleet --server vibe inbox --pane %127
 ```
 
-`reply` reads the message from the selected local inbox and delivers a new message to its return address; it does **not** delete the original. `ack` explicitly removes a processed message. A reply carries the original thread and reply ID. To send multiline input, use `--body -` and provide UTF-8 text on stdin.
+`reply` reads the message from the selected local inbox, delivers a new message to its return address, and then acks the original, since answering it is handling it; pass `--keep` to leave the original for later. `ack` removes a message you handled without replying. `inbox` prints the messages as JSON on stdout and, when there are any, a reminder on stderr of how to ack them. A reply carries the original thread and reply ID. To send multiline input, use `--body -` and provide UTF-8 text on stdin.
 
 **Delivery semantics:** `stored: true` means tmux accepted the buffer. It does not mean an Agent saw the message, accepted a task, or finished it. Agents must check their inbox themselves; there is no automatic wake-up or injection into a live prompt. An agent that types into another pane to prompt it must read the pane first and leave any draft it did not type alone: never clear, edit or submit it. Inside tmux, `--server` defaults to the server the command runs in; with `--host` it defaults to `default`. `ack` is a local removal, not an automatically transmitted read receipt. Results and acknowledgements can be sent explicitly as replies.
 
