@@ -23,9 +23,8 @@ func paneFlag(cmd *cobra.Command, pane *string) {
 }
 
 func addressFlags(cmd *cobra.Command, from, body *string) {
-	cmd.Flags().StringVar(from, "from", "", "your return address HOST/SERVER/%PANE")
+	cmd.Flags().StringVar(from, "from", "", "your return address HOST/SERVER/%PANE (default: this pane, as the receiving device reaches it)")
 	cmd.Flags().StringVar(body, "body", "", "message text, or - to read stdin")
-	_ = cmd.MarkFlagRequired("from")
 	_ = cmd.MarkFlagRequired("body")
 }
 
@@ -43,6 +42,11 @@ func init() {
 			text, err := fleet.ReadBody(body, os.Stdin)
 			if err != nil {
 				return err
+			}
+			if from == "" {
+				if from, err = defaultFrom(hostFlag); err != nil {
+					return err
+				}
 			}
 			receipt, err := fleet.Send(target(), to, from, text, sendID)
 			if err != nil {
@@ -95,6 +99,11 @@ func init() {
 			if err != nil {
 				return err
 			}
+			if replyFrom == "" {
+				if replyFrom, err = defaultReplyFrom(replyPane, args[0]); err != nil {
+					return err
+				}
+			}
 			receipt, err := fleet.Reply(target(), replyPane, args[0], replyFrom, text, replyID)
 			if err != nil {
 				return err
@@ -107,4 +116,56 @@ func init() {
 	idFlag(reply, &replyID)
 
 	rootCmd.AddCommand(send, inbox, ack, reply)
+}
+
+// defaultFrom is this pane's return address as the device behind host reaches
+// it: "." on the same device, else the return_host configured for that node.
+// Hand-written addresses were often unusable ("local", or a device's own name),
+// so the default comes from configuration rather than from the sender.
+func defaultFrom(host string) (string, error) {
+	node := fleet.Node{}
+	if host != "" {
+		nodes, err := fleet.LoadNodes()
+		if err != nil {
+			return "", err
+		}
+		node = fleet.Node{Host: host}
+		for _, n := range nodes {
+			if n.Host == host && n.ReturnHost != "" {
+				node = n
+			}
+		}
+		if node.ReturnHost == "" {
+			return "", fmt.Errorf("--from is required: no node for %s sets return_host in %s", host, fleet.ConfigPath())
+		}
+	}
+	addr := fleet.SelfAddress(node)
+	if addr == "" {
+		return "", fmt.Errorf("--from is required outside tmux")
+	}
+	return addr, nil
+}
+
+// defaultReplyFrom answers toward the device the message came from.
+func defaultReplyFrom(pane, id string) (string, error) {
+	if hostFlag != "" {
+		return "", fmt.Errorf("--from is required with --host")
+	}
+	messages, err := fleet.Inbox(target(), pane)
+	if err != nil {
+		return "", err
+	}
+	for _, m := range messages {
+		if m.ID == id {
+			host, _, _, err := fleet.ParseAddress(m.From)
+			if err != nil {
+				return "", err
+			}
+			if host == "." {
+				host = ""
+			}
+			return defaultFrom(host)
+		}
+	}
+	return "", fmt.Errorf("message %s is not in the inbox of %s", id, pane)
 }

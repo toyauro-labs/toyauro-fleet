@@ -33,6 +33,12 @@ A stored message notifies no one. The recipient sees it only when something in
 its pane runs "fleet inbox". To prompt that, you may type into its pane, but read
 the pane first: if its input line holds text you did not type, leave it alone.
 Never clear, edit or submit someone else's draft; wait, or ask its owner.
+Your inbox is what you still owe: ack each message, replies included, as soon as
+you have acted on it. Answer with "fleet reply ID" so the answer lands in the
+asker's thread; ask once, and send again only to add something new.
+
+Omit --from: fleet fills in your return address as the other device reaches you,
+"." on the same device and the node's return_host across devices.
 
 Inside tmux, --server defaults to the server you are in; with --host it defaults
 to "default", the server on the other device.

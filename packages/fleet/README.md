@@ -63,7 +63,7 @@ The view only covers devices in the config. With no config it shows this device 
 
 Attaching from a smaller terminal can shrink the window for everyone on it, following that server's `window-size` option.
 
-A return address is `SSH_ALIAS/TMUX_SERVER/%PANE`. The alias must work **from the recipient's device**, not necessarily from the sender. Use `.` as the host when replying to a pane on the same machine. A pane ID is unique only within its tmux server and lifetime; pane names and roles are display labels, not unique addresses.
+A return address is `SSH_ALIAS/TMUX_SERVER/%PANE`. The alias must work **from the recipient's device**, not necessarily from the sender. Use `.` as the host when replying to a pane on the same machine. Inside tmux, `send` and `reply` fill the address in when `--from` is omitted: `.` on the same device, and across devices the `return_host` of the node you are sending to. Without one, a cross-device send asks for `--from`. In a five-round experiment with Pi agents, about 40% of hand-written addresses could not be used by the recipient (`local`, or a device's own name); set `return_host` once on each device instead. A pane ID is unique only within its tmux server and lifetime; pane names and roles are display labels, not unique addresses.
 
 `fleet node add` writes devices to `~/.config/toyauro-fleet/config.json`, which you can also edit by hand, with `"port"` for a nonstandard SSH port; one `fleet list` then queries them all. By default it shows panes with an Adon name or a connected Adon adapter; use `fleet list --all` for every pane or `fleet list --json` for scripts. Wide terminals show a table; narrow terminals group panes by device. Status colors are used only on interactive terminals and respect `NO_COLOR`. Unreachable nodes are reported as errors. Names and state are read from tmux live, and names are not unique addresses. For example:
 
@@ -83,14 +83,14 @@ fleet list
 # To query just the phone's tmux server:
 fleet --host ace-ts --server default list
 
-# Store a request for phone %2; phone can reach this Mac through SSH alias macmini.
+# Store a request for phone %2 from Mac pane %127. The return address,
+# macmini/vibe/%127, comes from the phone node's return_host.
 fleet --host ace-ts --server default send --to %2 \
-  --from 'macmini/vibe/%127' --body 'Please check the Android build.'
+  --body 'Please check the Android build.'
 
 # In the phone pane: read, then reply to the message ID shown by inbox.
 fleet inbox --pane %2
-fleet reply --pane %2 --from 'ace-ts/default/%2' \
-  --body 'Checked: build launches.' MESSAGE_ID
+fleet reply --pane %2 --body 'Checked: build launches.' MESSAGE_ID
 fleet ack --pane %2 MESSAGE_ID
 
 # On Mac: see the reply. Use the correct local tmux server and pane.

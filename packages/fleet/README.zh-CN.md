@@ -65,7 +65,7 @@ fleet node rm mac
 
 ## 地址与配置
 
-地址格式为 `SSH别名/tmux服务器/%pane`：SSH 别名必须是**对方机器**上能访问发送方的别名。同一台设备内发消息可以用 `.`。pane 编号只在对应的 tmux server 存活期间有效，名称和职责可以改变，不能作为唯一地址。
+地址格式为 `SSH别名/tmux服务器/%pane`：SSH 别名必须是**对方机器**上能访问发送方的别名。同一台设备内发消息可以用 `.`。在 tmux 里省略 `--from` 时，`send` 和 `reply` 会自动填写：同一台设备用 `.`，跨设备用目标节点的 `return_host`；没配 `return_host` 的跨设备发送会要求写 `--from`。五轮 Pi Agent 实验中，手写地址约四成对方无法使用（如 `local`，或写成本机自己的名字），所以请在每台设备上配置一次 `return_host`，不要让 Agent 手写。pane 编号只在对应的 tmux server 存活期间有效，名称和职责可以改变，不能作为唯一地址。
 
 `fleet node add` 把设备和 tmux server 写入 `~/.config/toyauro-fleet/config.json`，也可手动编辑；非标准 SSH 端口用 `"port"`。之后 `fleet list` 会同时查询它们。默认列出有 Adon 名称或已接入 Adon 的 pane；`fleet list --all` 查看所有 pane，`fleet list --json` 用于脚本。宽终端显示表格，窄终端按设备分组；状态灯只在交互终端着色，设置 `NO_COLOR` 可关闭颜色。不可达设备会报错，不会静默当成没有工位。列表实时读取 pane 的 `@pane_name` 和状态；显示名称不是唯一地址。配置样例：
 
@@ -85,14 +85,13 @@ fleet list
 # 只查看手机一个 server
 fleet --host ace-ts --server default list
 
-# 发给手机 %2：手机上用 macmini 这个 SSH 别名能找到 Mac
+# 从 Mac 的 %127 发给手机 %2；回复地址 macmini/vibe/%127 来自 phone 节点的 return_host
 fleet --host ace-ts --server default send --to %2 \
-  --from 'macmini/vibe/%127' --body '请检查 Android 构建。'
+  --body '请检查 Android 构建。'
 
 # 手机 Agent 在 %2 里读取和回复
 fleet inbox --pane %2
-fleet reply --pane %2 --from 'ace-ts/default/%2' \
-  --body '已检查，构建能够启动。' 消息ID
+fleet reply --pane %2 --body '已检查，构建能够启动。' 消息ID
 fleet ack --pane %2 消息ID
 
 # Mac Agent 查看自己的收件箱
